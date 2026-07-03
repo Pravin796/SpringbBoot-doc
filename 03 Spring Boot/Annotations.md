@@ -369,4 +369,268 @@ app.name=JobHunt
 app.version=1.0  
 app.owner=Pravin
 
+
 Mapped to a class.
+
+# What is @MappedSuperclass?
+
+@MappedSuperclass tells JPA:
+
+"This class is not an entity itself, but its fields should be inherited by other entities."
+
+Think of it like a template that provides common columns to child entities.
+
+Without @MappedSuperclass
+
+Suppose you have two entities:
+
+@Entity
+public class User {
+
+    @Id
+    private Long id;
+
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+
+    private String name;
+}
+@Entity
+public class Product {
+
+    @Id
+    private Long id;
+
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+
+    private String title;
+}
+
+Notice anything?
+
+createdAt and updatedAt are duplicated.
+
+Imagine 20 entities.
+
+You'd repeat the same fields 20 times.
+
+Solution: Create a base class
+@MappedSuperclass
+public class BaseEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private LocalDateTime createdAt;
+
+    private LocalDateTime updatedAt;
+}
+
+Now:
+
+@Entity
+public class User extends BaseEntity {
+
+    private String name;
+}
+@Entity
+public class Product extends BaseEntity {
+
+    private String title;
+}
+
+No duplication!
+
+What happens in the database?
+
+Suppose you save a User.
+
+The table becomes
+
+users
+----------------------------
+id
+created_at
+updated_at
+name
+
+If you save a Product
+
+products
+----------------------------
+id
+created_at
+updated_at
+title
+
+Notice:
+
+There is NO BaseEntity table.
+
+Instead, its fields become part of each child entity's table.
+
+Visual representation
+              BaseEntity
+        (@MappedSuperclass)
+        --------------------
+        id
+        createdAt
+        updatedAt
+               ▲
+      -------------------
+      ▲                 ▲
+    User             Product
+    -----            -------
+    name             title
+
+Database:
+
+users
+---------
+id
+created_at
+updated_at
+name
+products
+---------
+id
+created_at
+updated_at
+title
+Why isn't it an entity?
+
+Because a mapped superclass cannot exist on its own.
+
+You cannot do
+
+entityManager.find(BaseEntity.class, 1);
+
+❌ Not allowed.
+
+You also cannot write
+
+@Repository
+public interface BaseRepository
+        extends JpaRepository<BaseEntity, Long> {
+}
+
+❌ Because BaseEntity is not an entity.
+
+Only User and Product are entities.
+
+Real-world example
+
+Most Spring Boot applications have something like this:
+
+@MappedSuperclass
+@Getter
+@Setter
+public abstract class BaseEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @CreationTimestamp
+    private LocalDateTime createdAt;
+
+    @UpdateTimestamp
+    private LocalDateTime updatedAt;
+}
+
+Then:
+
+@Entity
+public class User extends BaseEntity {
+
+    private String name;
+}
+@Entity
+public class Order extends BaseEntity {
+
+    private Double amount;
+}
+@Entity
+public class Product extends BaseEntity {
+
+    private String title;
+}
+
+Every entity automatically gets:
+
+id
+createdAt
+updatedAt
+Common use cases
+
+@MappedSuperclass is perfect for fields shared across many entities, such as:
+
+id
+createdAt
+updatedAt
+createdBy
+updatedBy
+version
+deleted
+
+For example:
+
+@MappedSuperclass
+public class Auditable {
+
+    private LocalDateTime createdAt;
+
+    private LocalDateTime updatedAt;
+
+    private String createdBy;
+
+    private String updatedBy;
+}
+Difference between @MappedSuperclass and @Entity
+Feature	@MappedSuperclass	@Entity
+Has its own table?	❌ No	✅ Yes
+Can be queried?	❌ No	✅ Yes
+Can have a repository?	❌ No	✅ Yes
+Fields inherited by children?	✅ Yes	Only if using JPA inheritance (@Inheritance)
+Exists independently?	❌ No	✅ Yes
+@MappedSuperclass vs @Inheritance
+
+This is a common interview question.
+
+@MappedSuperclass
+BaseEntity
+   ▲
+--------
+▲      ▲
+User  Product
+
+Tables:
+
+users
+id
+created_at
+name
+products
+id
+created_at
+title
+
+There is no BaseEntity table.
+
+@Inheritance
+Person
+   ▲
+---------
+▲       ▲
+Student Teacher
+
+With @Inheritance, Person is also an entity. Depending on the inheritance strategy, JPA creates tables that represent the inheritance hierarchy, and you can query Person directly.
+
+Best practices
+✅ Use @MappedSuperclass for common entity fields.
+✅ Make the class abstract so it isn't instantiated directly.
+✅ Keep only reusable state and behavior there.
+❌ Don't create repositories for mapped superclasses.
+❌ Don't expect a separate database table for the mapped superclass.
