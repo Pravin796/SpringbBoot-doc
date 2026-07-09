@@ -634,3 +634,228 @@ Best practices
 ✅ Keep only reusable state and behavior there.
 ❌ Don't create repositories for mapped superclasses.
 ❌ Don't expect a separate database table for the mapped superclass.
+
+
+# What is @EntityListeners?
+
+@EntityListeners tells JPA:
+
+"Whenever something happens to this entity (before save, after save, before update, etc.), call another class to handle that event."
+
+That "another class" is called an Entity Listener.
+
+Think of it like an event listener in JavaScript.
+
+JavaScript analogy
+button.addEventListener("click", function () {
+    console.log("Button clicked!");
+});
+
+Here:
+
+Event = Click
+Listener = Function
+
+Similarly, in JPA:
+
+@EntityListeners(UserListener.class)
+@Entity
+public class User {
+}
+
+Here:
+
+Event = Save, Update, Delete...
+Listener = UserListener
+Why do we need it?
+
+Suppose every time a user is saved, you want to:
+
+set createdAt
+update updatedAt
+write a log
+generate an audit record
+
+Instead of writing that logic everywhere:
+
+user.setCreatedAt(LocalDateTime.now());
+userRepository.save(user);
+
+JPA can do it automatically.
+
+Example
+Step 1: Entity
+@Entity
+@EntityListeners(UserListener.class)
+public class User {
+
+    @Id
+    @GeneratedValue
+    private Long id;
+
+    private String name;
+
+    private LocalDateTime createdAt;
+}
+Step 2: Listener
+public class UserListener {
+
+    @PrePersist
+    public void beforeSave(User user) {
+        user.setCreatedAt(LocalDateTime.now());
+        System.out.println("User is about to be saved");
+    }
+}
+Step 3: Save
+User user = new User();
+user.setName("Pravin");
+
+userRepository.save(user);
+
+Before Hibernate executes the SQL:
+
+INSERT INTO users ...
+
+it automatically calls
+
+beforeSave(user);
+
+which sets
+
+createdAt = LocalDateTime.now();
+
+without you writing it in your service.
+
+Lifecycle Events
+
+JPA provides several lifecycle annotations that can be used inside an entity listener (or directly in the entity).
+
+Annotation	When it is called
+@PrePersist	Before a new entity is inserted
+@PostPersist	After the insert completes
+@PreUpdate	Before an existing entity is updated
+@PostUpdate	After the update completes
+@PreRemove	Before an entity is deleted
+@PostRemove	After the delete completes
+@PostLoad	After an entity is loaded from the database
+Example flow
+
+Suppose:
+
+userRepository.save(user);
+
+If it's a new user:
+
+Create User
+
+↓
+
+@PrePersist
+
+↓
+
+INSERT INTO users
+
+↓
+
+@PostPersist
+
+If you update a user:
+
+Update User
+
+↓
+
+@PreUpdate
+
+↓
+
+UPDATE users
+
+↓
+
+@PostUpdate
+Why use a separate listener class?
+
+You could put the methods directly inside the entity:
+
+@Entity
+public class User {
+
+    @PrePersist
+    public void beforeSave() {
+        createdAt = LocalDateTime.now();
+    }
+}
+
+This works perfectly.
+
+But if many entities need the same behavior, it's cleaner to move that logic into a separate listener class and attach it with @EntityListeners.
+
+Real-world Spring Boot example
+
+You may have seen something like this:
+
+@MappedSuperclass
+@EntityListeners(AuditingEntityListener.class)
+public abstract class BaseEntity {
+
+    @CreatedDate
+    private LocalDateTime createdAt;
+
+    @LastModifiedDate
+    private LocalDateTime updatedAt;
+}
+
+This is part of Spring Data JPA's auditing support.
+
+Here:
+
+@EntityListeners(AuditingEntityListener.class) registers Spring's auditing listener.
+The listener automatically fills fields marked with @CreatedDate and @LastModifiedDate.
+
+So if you save:
+
+User user = new User();
+user.setName("Pravin");
+
+userRepository.save(user);
+
+you don't need to write:
+
+user.setCreatedAt(...);
+user.setUpdatedAt(...);
+
+The auditing listener does it automatically.
+
+@EntityListeners vs lifecycle annotations
+
+@EntityListeners specifies which class should receive lifecycle callbacks.
+
+The lifecycle annotations (@PrePersist, @PreUpdate, etc.) specify which method should run for a particular event.
+
+Example:
+
+@EntityListeners(UserListener.class)
+@Entity
+public class User {
+}
+public class UserListener {
+
+    @PrePersist
+    public void beforeInsert(User user) {
+        // Runs before insert
+    }
+
+    @PreUpdate
+    public void beforeUpdate(User user) {
+        // Runs before update
+    }
+}
+
+# Summary
+@EntityListeners registers one or more listener classes for an entity.
+Listener classes react to JPA lifecycle events such as insert, update, delete, and load.
+Lifecycle methods are marked with annotations like @PrePersist, @PostUpdate, and @PreRemove.
+A common real-world use is auditing, where AuditingEntityListener automatically populates fields like createdAt and updatedAt.
+Keeping lifecycle logic in listeners helps keep your entity classes focused on representing data rather than handling cross-cutting concerns like auditing or logging.
